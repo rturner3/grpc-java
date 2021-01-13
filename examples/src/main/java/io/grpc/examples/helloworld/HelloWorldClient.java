@@ -18,9 +18,27 @@ package io.grpc.examples.helloworld;
 
 import io.grpc.Channel;
 import io.grpc.ManagedChannel;
-import io.grpc.ManagedChannelBuilder;
 import io.grpc.StatusRuntimeException;
+import io.grpc.netty.GrpcSslContexts;
+import io.grpc.netty.NettyChannelBuilder;
+import io.netty.handler.ssl.ClientAuth;
+import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslContextBuilder;
+import io.spiffe.exception.SocketEndpointAddressException;
+import io.spiffe.exception.X509SourceException;
+import io.spiffe.provider.SpiffeKeyManager;
+import io.spiffe.provider.SpiffeTrustManager;
+import io.spiffe.spiffeid.SpiffeId;
+import io.spiffe.spiffeid.SpiffeIdUtils;
+import io.spiffe.svid.x509svid.X509Svid;
+import io.spiffe.workloadapi.DefaultX509Source;
+import io.spiffe.workloadapi.X509Source;
+
+import javax.net.ssl.KeyManager;
+import javax.net.ssl.TrustManager;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -29,6 +47,7 @@ import java.util.logging.Logger;
  */
 public class HelloWorldClient {
   private static final Logger logger = Logger.getLogger(HelloWorldClient.class.getName());
+  private static final String acceptedSpiffeID = "spiffe://example.org/myservice";
 
   private final GreeterGrpc.GreeterBlockingStub blockingStub;
 
@@ -60,6 +79,21 @@ public class HelloWorldClient {
    * greeting. The second argument is the target server.
    */
   public static void main(String[] args) throws Exception {
+    X509Source x509Source = DefaultX509Source.newSource();
+    KeyManager keyManager = new SpiffeKeyManager(x509Source);
+
+    Supplier<Set<SpiffeId>> acceptedSpiffeIds = () -> SpiffeIdUtils.toSetOfSpiffeIds(acceptedSpiffeID);
+    TrustManager trustManager = new SpiffeTrustManager(x509Source, acceptedSpiffeIds);
+
+    SslContextBuilder sslContextBuilder = SslContextBuilder
+        .forClient()
+        .trustManager(trustManager)
+        .keyManager(keyManager)
+        .clientAuth(ClientAuth.REQUIRE);
+
+    SslContext sslContext = GrpcSslContexts.configure(sslContextBuilder)
+        .build();
+
     String user = "world";
     // Access a service running on the local machine on port 50051
     String target = "localhost:50051";
@@ -81,10 +115,10 @@ public class HelloWorldClient {
     // Create a communication channel to the server, known as a Channel. Channels are thread-safe
     // and reusable. It is common to create channels at the beginning of your application and reuse
     // them until the application shuts down.
-    ManagedChannel channel = ManagedChannelBuilder.forTarget(target)
+    ManagedChannel channel = NettyChannelBuilder.forTarget(target)
         // Channels are secure by default (via SSL/TLS). For the example we disable TLS to avoid
         // needing certificates.
-        .usePlaintext()
+        .sslContext(sslContext)
         .build();
     try {
       HelloWorldClient client = new HelloWorldClient(channel);
