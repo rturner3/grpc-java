@@ -17,9 +17,19 @@
 package io.grpc.examples.helloworld;
 
 import io.grpc.Server;
-import io.grpc.ServerBuilder;
+import io.grpc.netty.GrpcSslContexts;
+import io.grpc.netty.NettyServerBuilder;
 import io.grpc.stub.StreamObserver;
-import java.io.IOException;
+import io.netty.handler.ssl.ClientAuth;
+import io.netty.handler.ssl.SslContextBuilder;
+import io.spiffe.provider.SpiffeKeyManager;
+import io.spiffe.provider.SpiffeTrustManager;
+import io.spiffe.spiffeid.SpiffeIdUtils;
+import io.spiffe.workloadapi.DefaultX509Source;
+import io.spiffe.workloadapi.X509Source;
+
+import javax.net.ssl.KeyManager;
+import javax.net.ssl.TrustManager;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
@@ -28,13 +38,18 @@ import java.util.logging.Logger;
  */
 public class HelloWorldServer {
   private static final Logger logger = Logger.getLogger(HelloWorldServer.class.getName());
+  private static final String acceptedSpiffeID = "spiffe://example.org/myservice";
 
   private Server server;
 
-  private void start() throws IOException {
+  private void start() throws Exception {
     /* The port on which the server should run */
     int port = 50051;
-    server = ServerBuilder.forPort(port)
+
+    server = NettyServerBuilder.forPort(port)
+        .sslContext(GrpcSslContexts.configure(getSslContextBuilder())
+          .clientAuth(ClientAuth.REQUIRE)
+          .build())
         .addService(new GreeterImpl())
         .build()
         .start();
@@ -69,10 +84,25 @@ public class HelloWorldServer {
     }
   }
 
+  private SslContextBuilder getSslContextBuilder() throws Exception {
+    // create a new X.509 source using the default socket endpoint address
+    X509Source x509Source = DefaultX509Source.newSource();
+
+    // KeyManager gets the X.509 cert and private key from the X.509 SVID source
+    KeyManager keyManager = new SpiffeKeyManager(x509Source);
+
+    // TrustManager gets the X509Source and the supplier of the Set of accepted SPIFFE IDs.
+    TrustManager trustManager = new SpiffeTrustManager(x509Source, () -> SpiffeIdUtils.toSetOfSpiffeIds(acceptedSpiffeID));
+
+    return SslContextBuilder
+        .forServer(keyManager)
+        .trustManager(trustManager);
+  }
+
   /**
    * Main launches the server from the command line.
    */
-  public static void main(String[] args) throws IOException, InterruptedException {
+  public static void main(String[] args) throws Exception {
     final HelloWorldServer server = new HelloWorldServer();
     server.start();
     server.blockUntilShutdown();
