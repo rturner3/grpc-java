@@ -36,6 +36,8 @@ dependencies {
 
     runtimeOnly "io.grpc:grpc-netty-shaded:${grpcVersion}"
 
+    implementation group: 'io.spiffe', name: 'java-spiffe-provider', version: '0.6.3'
+
     testImplementation "io.grpc:grpc-testing:${grpcVersion}"
     testImplementation "junit:junit:4.12"
     testImplementation "org.mockito:mockito-core:3.4.0"
